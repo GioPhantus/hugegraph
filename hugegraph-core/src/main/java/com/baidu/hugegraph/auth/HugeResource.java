@@ -20,6 +20,8 @@
 package com.baidu.hugegraph.auth;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,10 +53,17 @@ import com.google.common.collect.ImmutableSet;
 public class HugeResource {
 
     public static final String ANY = "*";
+    public static final String POUND_SEPARATOR = "#";
 
     public static final HugeResource ALL = new HugeResource(ResourceType.ALL,
                                                             ANY, null);
-    public static final List<HugeResource> ALL_RES = ImmutableList.of(ALL);
+    public static final Map<String, List<HugeResource>> ALL_RES =
+            new HashMap<String, List<HugeResource>>() {
+                {
+                    put("ALL#*", ImmutableList.of(ALL));
+                }
+            };
+
 
     private static final Set<ResourceType> CHECK_NAME_RESS = ImmutableSet.of(
                                                              ResourceType.META);
@@ -151,7 +160,7 @@ public class HugeResource {
         return this.matchLabel(element.name());
     }
 
-    private boolean filter(HugeElement element) {
+    public boolean filter(HugeElement element) {
         assert this.type.match(ResourceType.from(element.type()));
 
         if (!this.matchLabel(element.label())) {
@@ -192,6 +201,10 @@ public class HugeResource {
         return this.label.equals(ANY) || other.matches(this.label);
     }
 
+    public boolean matchProperties(HugeResource other) {
+        return matchProperties(other.properties);
+    }
+
     private boolean matchProperties(Map<String, Object> other) {
         if (this.properties == null) {
             // Any property is OK
@@ -215,10 +228,15 @@ public class HugeResource {
         }
         if (this.type == null) {
             return false;
-        }
-        if (!this.type.match(other.type)) {
+        } else if (!this.type.match(other.type)) {
             return false;
+        } else if (this.type != other.type || !(this.type.isGraph() ||
+                                                this.type.isSchema())) {
+            return true;
         }
+
+        // if (this.type.isGraph() || this.type.isSchema) &&
+        // this.type == other.type
         if (!this.matchLabel(other.label)) {
             return false;
         }
@@ -260,9 +278,15 @@ public class HugeResource {
         return JsonUtil.fromJson(resource, HugeResource.class);
     }
 
-    public static List<HugeResource> parseResources(String resources) {
+    public static Map<String, List<HugeResource>> parseResources(String resources) {
         TypeReference<?> type = new TypeReference<List<HugeResource>>() {};
-        return JsonUtil.fromJson(resources, type);
+        List<HugeResource> hugeResources = JsonUtil.fromJson(resources, type);
+        Map<String, List<HugeResource>> ress = new HashMap<>();
+        for (HugeResource hr: hugeResources) {
+            String typeLabel = hr.type.toString() + POUND_SEPARATOR + hr.label;
+            ress.get(typeLabel).add(hr);
+        }
+        return ress;
     }
 
     public static class NameObject implements Namifiable {

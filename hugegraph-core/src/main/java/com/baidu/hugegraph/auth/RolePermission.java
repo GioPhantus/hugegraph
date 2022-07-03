@@ -22,6 +22,7 @@ package com.baidu.hugegraph.auth;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +48,8 @@ public class RolePermission {
                                               "*", HugePermission.NONE);
     public static final RolePermission ADMIN = RolePermission.role("*",
                                                "*", HugePermission.ANY);
+    public static final String ANY = "*";
+    public static final String POUND_SEPARATOR = "#";
 
     static {
         SimpleModule module = new SimpleModule();
@@ -60,92 +63,159 @@ public class RolePermission {
     // Mapping of: graphSpace -> graph -> action -> resource
     @JsonProperty("roles")
     private final Map<String, Map<String, Map<HugePermission,
-                                              List<HugeResource>>>> roles;
+            Map<String, List<HugeResource>>>>> roles;
 
     public RolePermission() {
         this(new TreeMap<>());
     }
 
     private RolePermission(Map<String, Map<String, Map<HugePermission,
-                           List<HugeResource>>>> roles) {
+            Map<String, List<HugeResource>>>>> roles) {
         this.roles = roles;
     }
 
     protected void add(String graphSpace, String graph, String action,
-                       List<HugeResource> resources) {
+                       Map<String, List<HugeResource>> resources) {
         this.add(graphSpace, graph, HugePermission.valueOf(action), resources);
     }
 
     protected void add(String graphSpace, String graph, HugePermission action,
-                       List<HugeResource> resources) {
-        Map<String, Map<HugePermission, List<HugeResource>>> graphPermissions =
+                       Map<String, List<HugeResource>> resources) {
+        Map<String, Map<HugePermission, Map<String, List<HugeResource>>>> graphPermissions =
                                         this.roles.get(graphSpace);
         if (graphPermissions == null) {
             graphPermissions = new TreeMap<>();
         }
 
-        Map<HugePermission, List<HugeResource>> permissions =
+        Map<HugePermission, Map<String, List<HugeResource>>> permissions =
                                                 graphPermissions.get(graph);
         if (permissions == null) {
             permissions = new TreeMap<>();
             permissions.put(action, resources);
             graphPermissions.put(graph, permissions);
         } else {
-            List<HugeResource> mergedResources = permissions.get(action);
+            Map<String, List<HugeResource>> mergedResources = permissions.get(action);
             if (mergedResources == null) {
-                mergedResources = new ArrayList<>();
+                mergedResources = new HashMap<>();
                 permissions.put(action, mergedResources);
             }
-            mergedResources.addAll(resources);
+
+            for (Map.Entry<String, List<HugeResource>> entry : resources.entrySet()) {
+                String typeLabel = entry.getKey();
+                List<HugeResource> resourcesList =
+                        mergedResources.get(typeLabel);
+                if (resourcesList != null) {
+                    resourcesList.addAll(entry.getValue());
+                } else {
+                    mergedResources.put(typeLabel, entry.getValue());
+                }
+            }
         }
 
         this.roles.put(graphSpace, graphPermissions);
     }
 
-    protected Map<String, Map<String,
-                  Map<HugePermission, List<HugeResource>>>> map() {
+    protected Map<String, Map<String, Map<HugePermission,
+            Map<String, List<HugeResource>>>>> map() {
         return Collections.unmodifiableMap(this.roles);
     }
 
     protected boolean contains(RolePermission other) {
-        for (Map.Entry<String, Map<String, Map<HugePermission,
-             List<HugeResource>>>> e1 : other.roles.entrySet()) {
+        for (Map.Entry<String, Map<String, Map<HugePermission, Map<String,
+                List<HugeResource>>>>> e1 : other.roles.entrySet()) {
             String graphSpace = e1.getKey();
-            Map<String, Map<HugePermission, List<HugeResource>>> graphPerms =
-                                            this.roles.get(graphSpace);
-            if (graphPerms == null) {
+            Map<String, Map<HugePermission, Map<String, List<HugeResource>>>>
+                    resGraph = this.roles.get(graphSpace);
+            if (resGraph == null) {
                 return false;
             }
-            for (Map.Entry<String, Map<HugePermission, List<HugeResource>>> e2 :
+            for (Map.Entry<String, Map<HugePermission,
+                    Map<String, List<HugeResource>>>> e2 :
                 e1.getValue().entrySet()) {
-                Map<HugePermission, List<HugeResource>> permissions =
-                                    graphPerms.get(e2.getKey());
-                if (permissions == null) {
+                Map<HugePermission, Map<String, List<HugeResource>>>
+                        resPerm = resGraph.get(e2.getKey());
+                if (resPerm == null) {
                     return false;
                 }
 
-                for (Map.Entry<HugePermission, List<HugeResource>> e3 :
-                     e2.getValue().entrySet()) {
-                    List<HugeResource> ress = permissions.get(e3.getKey());
-                    if (ress == null) {
+                for (Map.Entry<HugePermission, Map<String, List<HugeResource>>>
+                        e3 : e2.getValue().entrySet()) {
+                    Map<String, List<HugeResource>> resType =
+                            resPerm.get(e3.getKey());
+                    if (resType == null) {
                         return false;
                     }
-                    for (HugeResource r : e3.getValue()) {
-                        boolean contains = false;
-                        for (HugeResource res : ress) {
-                            if (res.contains(r)) {
-                                contains = true;
-                                break;
+
+                    for (Map.Entry<String, List<HugeResource>> e4:
+                            e3.getValue().entrySet()) {
+                        // Just check whether resType contains e4
+                        String[] typeAndLabel =
+                                e4.getKey().split(POUND_SEPARATOR);
+                        ResourceType requiredType =
+                                ResourceType.valueOf(typeAndLabel[0]);
+                        boolean checkLabel = requiredType.isGraphOrSchema();
+
+
+                        for (HugeResource r : e4.getValue()) {
+                            // for every r, resType must contain r
+                            boolean contains = false;
+
+                            for (Map.Entry<String, List<HugeResource>> ressMap:
+                                    resType.entrySet()) {
+                                String[] key = ressMap.getKey().
+                                                      split(POUND_SEPARATOR);
+                                ResourceType ressType =
+                                        ResourceType.valueOf(key[0]);
+                                if (!ressType.match(requiredType)) {
+                                    continue;
+                                }
+
+                                List<HugeResource> ress = ressMap.getValue();
+                                if (ress == null) {
+                                    continue;
+                                } else if (!checkLabel) {
+                                    contains = true;
+                                    break;
+                                }
+
+                                // check label
+                                if (!(key[1] == ANY ||
+                                      typeAndLabel[1].matches(key[1]))) {
+                                    continue;
+                                }
+
+                                if (!requiredType.isGraph()) {
+                                    contains = true;
+                                    break;
+                                }
+                                // check properties
+                                for (HugeResource res : ress) {
+                                    if (res.matchProperties(r)) {
+                                        contains = true;
+                                        break;
+                                    }
+                                }
                             }
-                        }
-                        if (!contains) {
-                            return false;
+
+                            if (!contains) {
+                                return false;
+                            }
                         }
                     }
                 }
             }
         }
         return true;
+    }
+
+    public List<ResourceType> getMatchedTypelist(ResourceType resourceType) {
+        List<ResourceType> resourceTypes = new ArrayList<>();
+        for (ResourceType e: ResourceType.values()) {
+            if (e.match(resourceType)) {
+                resourceTypes.add(e);
+            }
+        }
+        return resourceTypes;
     }
 
     @Override

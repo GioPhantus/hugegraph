@@ -20,6 +20,7 @@
 package com.baidu.hugegraph.auth;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,9 +48,11 @@ public class HugeTarget extends Entity {
     private String name;
     private String graphSpace;
     private String graph;
-    private List<HugeResource> resources;
+    private Map<String, List<HugeResource>> resources;
 
-    private static final List<HugeResource> EMPTY = ImmutableList.of();
+    public static final String POUND_SEPARATOR = "#";
+
+    private static final Map<String, List<HugeResource>> EMPTY = new HashMap<>();
 
     public HugeTarget(Id id) {
         this(id, null, null, null, EMPTY);
@@ -66,13 +69,13 @@ public class HugeTarget extends Entity {
     }
 
     public HugeTarget(String name, String graphSpace, String graph,
-                      List<HugeResource> resources) {
+                      Map<String, List<HugeResource>> resources) {
         this(StringUtils.isNotEmpty(name) ? IdGenerator.of(name) : null, name,
              graphSpace, graph, resources);
     }
 
     private HugeTarget(Id id, String name, String graphSpace, String graph,
-                       List<HugeResource> resources) {
+                       Map<String, List<HugeResource>> resources) {
         this.id = id;
         this.name = name;
         this.graphSpace = graphSpace;
@@ -103,7 +106,7 @@ public class HugeTarget extends Entity {
         return this.graph;
     }
 
-    public List<HugeResource> resources() {
+    public Map<String, List<HugeResource>> resources() {
         return this.resources;
     }
 
@@ -116,7 +119,37 @@ public class HugeTarget extends Entity {
         }
     }
 
-    public void resources(List<HugeResource> resources) {
+    public void resources(List<Map<String, Object>> resources) {
+        E.checkNotNull(resources, "resources");
+        Map<String, List<HugeResource>> ressMap = new HashMap<>();
+        for (Map<String, Object> entry: resources) {
+            ResourceType type =
+                    ResourceType.valueOf(entry.get("type").toString());
+            String label = (entry.get("label") == null)?
+                    null : entry.get("label").toString();
+
+            String typeLabel;
+            // decide typeLabel
+            if (type.isGraphOrSchema()) {
+                typeLabel = type + POUND_SEPARATOR + label;
+            } else {
+                typeLabel = type.toString();
+            }
+
+            HugeResource hr = new HugeResource(
+                    type, label, (Map<String, Object>)entry.get("properties"));
+            List<HugeResource> ress = ressMap.get(typeLabel);
+            if (ress == null) {
+                ress = Arrays.asList(hr);
+                ressMap.put(typeLabel, ress);
+            } else {
+                ress.add(hr);
+            }
+        }
+        this.resources = ressMap;
+    }
+
+    public void resources(Map<String, List<HugeResource>> resources) {
         E.checkNotNull(resources, "resources");
         this.resources = resources;
     }
@@ -142,8 +175,12 @@ public class HugeTarget extends Entity {
                 this.graph = (String) value;
                 break;
             case P.RESS:
-                // this.resources = (List<HugeResource>) value;
-                this.resources = JsonUtil.fromJson(JsonUtil.toJson(value), new TypeReference<List<HugeResource>>(){});
+                // this.resources = (Map<String, List<HugeResource>>)) value;
+                this.resources =
+                        JsonUtil.fromJson(
+                                JsonUtil.toJson(value),
+                                new TypeReference<Map<String,
+                                        List<HugeResource>>>(){});
                 break;
             default:
                 throw new AssertionError("Unsupported key: " + key);

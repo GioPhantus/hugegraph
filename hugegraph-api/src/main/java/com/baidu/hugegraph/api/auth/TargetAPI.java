@@ -19,6 +19,8 @@
 
 package com.baidu.hugegraph.api.auth;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,10 +37,17 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.T;
+import org.apache.tinkerpop.shaded.jackson.core.type.TypeReference;
+
 import com.baidu.hugegraph.api.API;
 import com.baidu.hugegraph.api.filter.StatusFilter.Status;
 import com.baidu.hugegraph.auth.AuthManager;
+import com.baidu.hugegraph.auth.HugeResource;
 import com.baidu.hugegraph.auth.HugeTarget;
+import com.baidu.hugegraph.auth.ResourceType;
+import com.baidu.hugegraph.auth.SchemaDefine;
 import com.baidu.hugegraph.core.GraphManager;
 import com.baidu.hugegraph.define.Checkable;
 import com.baidu.hugegraph.exception.NotFoundException;
@@ -74,7 +83,8 @@ public class TargetAPI extends API {
         HugeTarget target = jsonTarget.build(graphSpace);
         AuthManager authManager = manager.authManager();
         target.id(authManager.createTarget(graphSpace, target, true));
-        return manager.serializer().writeAuthElement(target);
+        return manager.serializer().writeAuthElement(
+                new HugeTargetResponse(target));
     }
 
     @PUT
@@ -102,7 +112,9 @@ public class TargetAPI extends API {
         }
         target = jsonTarget.build(target);
         target = authManager.updateTarget(graphSpace, target, true);
-        return manager.serializer().writeAuthElement(target);
+
+        return manager.serializer().writeAuthElement(
+                new HugeTargetResponse(target));
     }
 
     @GET
@@ -117,7 +129,11 @@ public class TargetAPI extends API {
         AuthManager authManager = manager.authManager();
         List<HugeTarget> targets = authManager.listAllTargets(graphSpace,
                                                               limit, true);
-        return manager.serializer().writeAuthElements("targets", targets);
+        List<HugeTargetResponse> respList = new ArrayList<>();
+        for (HugeTarget target: targets) {
+            respList.add(new HugeTargetResponse(target));
+        }
+        return manager.serializer().writeAuthElements("targets", respList);
     }
 
     @GET
@@ -133,7 +149,8 @@ public class TargetAPI extends API {
         AuthManager authManager = manager.authManager();
         HugeTarget target = authManager.getTarget(graphSpace,
                             UserAPI.parseId(id), true);
-        return manager.serializer().writeAuthElement(target);
+        return manager.serializer().writeAuthElement(
+                new HugeTargetResponse(target));
     }
 
     @DELETE
@@ -173,7 +190,7 @@ public class TargetAPI extends API {
                             target.graph().equals(this.graph),
                             "The graph of target can't be updated");
             if (this.resources != null) {
-                target.resources(JsonUtil.toJson(this.resources));
+                target.resources(this.resources);
             }
             return target;
         }
@@ -182,9 +199,25 @@ public class TargetAPI extends API {
             HugeTarget target = new HugeTarget(this.name, graphSpace,
                                                this.graph);
             if (this.resources != null) {
-                target.resources(JsonUtil.toJson(this.resources));
+                target.resources(this.resources);
             }
             return target;
+        }
+
+        public void fromHugeTarget(HugeTarget target) {
+            this.name = target.name();
+            this.graph = target.graph();
+            List<Map<String, Object>> ress = new ArrayList<>();
+            for (Map.Entry<String, List<HugeResource>> item :
+                    target.resources().entrySet()) {
+                for (HugeResource hugeResource : item.getValue()) {
+                    ress.add(JsonUtil.fromJson(
+                            hugeResource.toString(),
+                            new TypeReference<Map<String, Object>>() {
+                            }));
+                }
+            }
+            this.resources = ress;
         }
 
         @Override
@@ -200,6 +233,136 @@ public class TargetAPI extends API {
             E.checkArgument(this.resources != null,
                             "Expect one of target url/resources");
 
+        }
+
+
+    }
+
+    // only used for deserializable response
+    public class HugeTargetResponse extends SchemaDefine.Entity {
+        private String name;
+        private String graphSpace;
+        private String graph;
+        private List<HugeResource> resources;
+
+        private final List<HugeResource> EMPTY = new ArrayList<>();
+
+        public HugeTargetResponse(HugeTarget target) {
+            this.id = target.id();
+            this.name = target.name();
+            this.graphSpace = target.graphSpace();
+            this.graph = target.graph();
+            this.create = target.create();
+            this.creator = target.creator();
+            this.update = target.update();
+            List<HugeResource> ress = new ArrayList<>();
+            for (Map.Entry<String, List<HugeResource>> item :
+                    target.resources().entrySet()) {
+                ress.addAll(item.getValue());
+            }
+            this.resources = ress;
+        }
+
+        // methods below are never used
+        @Override
+        public ResourceType type() {
+            return ResourceType.TARGET;
+        }
+
+        @Override
+        public String label() {
+            return HugeTarget.P.TARGET;
+        }
+
+        @Override
+        public String name() {
+            return this.name;
+        }
+
+        public String graphSpace() {
+            return this.graphSpace;
+        }
+
+        public String graph() {
+            return this.graph;
+        }
+
+        public List<HugeResource> resources() {
+            return this.resources;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("HugeTarget(%s)", this.id);
+        }
+
+        @Override
+        protected boolean property(String key, Object value) {
+            if (super.property(key, value)) {
+                return true;
+            }
+            switch (key) {
+                case HugeTarget.P.NAME:
+                    this.name = (String) value;
+                    break;
+                case HugeTarget.P.GRAPHSPACE:
+                    this.graphSpace = (String) value;
+                    break;
+                case HugeTarget.P.GRAPH:
+                    this.graph = (String) value;
+                    break;
+                case HugeTarget.P.RESS:
+                    // this.resources = (Map<String, List<HugeResource>>)) value;
+                    this.resources = JsonUtil.fromJson(JsonUtil.toJson(value),
+                                    new TypeReference<List<HugeResource>>(){});
+                    break;
+                default:
+                    throw new AssertionError("Unsupported key: " + key);
+            }
+            return true;
+        }
+
+        @Override
+        public Map<String, Object> asMap() {
+            E.checkState(this.name != null, "Target name can't be null");
+
+            Map<String, Object> map = new HashMap<>();
+
+            map.put(Graph.Hidden.unHide(HugeTarget.P.NAME), this.name);
+            map.put(Graph.Hidden.unHide(HugeTarget.P.GRAPHSPACE), this.graphSpace);
+            map.put(Graph.Hidden.unHide(HugeTarget.P.GRAPH), this.graph);
+
+            if (this.resources != null && this.resources != EMPTY) {
+                map.put(Graph.Hidden.unHide(HugeTarget.P.RESS), this.resources);
+            }
+
+            return super.asMap(map);
+        }
+
+        @Override
+        protected Object[] asArray() {
+            E.checkState(this.name != null, "Target name can't be null");
+
+            List<Object> list = new ArrayList<>(16);
+
+            list.add(T.label);
+            list.add(HugeTarget.P.TARGET);
+
+            list.add(HugeTarget.P.NAME);
+            list.add(this.name);
+
+            list.add(HugeTarget.P.GRAPHSPACE);
+            list.add(this.graphSpace);
+
+            list.add(HugeTarget.P.GRAPH);
+            list.add(this.graph);
+
+            if (this.resources != null && this.resources != EMPTY) {
+                list.add(HugeTarget.P.RESS);
+                list.add(this.resources);
+            }
+
+            return super.asArray(list);
         }
     }
 }

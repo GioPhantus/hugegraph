@@ -1295,16 +1295,21 @@ public class AuthTest extends BaseCoreTest {
                                              makeTarget("hugegraph1"),
                                              false);
 
-        List<HugeResource> rv = HugeResource.parseResources(
-            "[{\"type\": \"VERTEX\", \"label\": \"person\", " +
-            "\"properties\":{\"city\": \"Beijing\", \"age\": \"P.gte(20)\"}}," +
-            " {\"type\": \"VERTEX_LABEL\", \"label\": \"*\"}," +
-            " {\"type\": \"PROPERTY_KEY\", \"label\": \"*\"}]");
-        List<HugeResource> re = HugeResource.parseResources(
+        Map<String, List<HugeResource>> rv = HugeResource.parseResources(
+            "{\"vertex_person\", [{\"type\": \"VERTEX\", \"label\": " +
+                                   "\"person\"," +
+                            " " +
+            "\"properties\":{\"city\": \"Beijing\", \"age\": \"P.gte(20)" +
+            "\"}}]," +
+            " \"vertexlabel\", [{\"type\": \"VERTEX_LABEL\", " +
+                            "\"label\": \"*\"}]," +
+            " \"propertykey\", [{\"type\": \"PROPERTY_KEY\", \"label\": " +
+            "\"*\"}]");
+        Map<String, List<HugeResource>> re = HugeResource.parseResources(
             "[{\"type\": \"EDGE\", \"label\": \"write\"}, " +
             " {\"type\": \"PROPERTY_KEY\"}, {\"type\": \"VERTEX_LABEL\"}, " +
             " {\"type\": \"EDGE_LABEL\"}, {\"type\": \"INDEX_LABEL\"}]");
-        List<HugeResource> rg = HugeResource.parseResources(
+        Map<String, List<HugeResource>> rg = HugeResource.parseResources(
             "[{\"type\": \"GREMLIN\"}]");
         Id graph1v = authManager.createTarget(DEFAULT_GRAPH_SPACE,
                                               makeTarget("hugegraph-v",
@@ -1515,7 +1520,7 @@ public class AuthTest extends BaseCoreTest {
     }
 
     private static HugeTarget makeTarget(String name, String graph,
-                                         List<HugeResource> ress) {
+                                         Map<String, List<HugeResource>> ress) {
         HugeTarget target = new HugeTarget(name, DEFAULT_GRAPH_SPACE,  graph, ress);
         target.creator("admin");
         return target;

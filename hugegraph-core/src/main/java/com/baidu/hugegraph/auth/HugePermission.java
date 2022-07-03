@@ -57,6 +57,7 @@ public enum HugePermission implements SerialEnum {
     }
 
     public boolean match(HugePermission other) {
+        // the range of other is read, write, delete and excute
         if (other == ANY) {
             return this == ANY;
         }

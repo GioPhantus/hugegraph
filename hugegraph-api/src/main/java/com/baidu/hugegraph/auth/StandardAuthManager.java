@@ -20,6 +20,8 @@
 package com.baidu.hugegraph.auth;
 
 import com.baidu.hugegraph.HugeException;
+import com.baidu.hugegraph.auth.HugeAuthenticator;
+import com.baidu.hugegraph.auth.HugeAuthenticator.RequiredPerm;
 import com.baidu.hugegraph.auth.SchemaDefine.AuthElement;
 import com.baidu.hugegraph.backend.cache.Cache;
 import com.baidu.hugegraph.backend.cache.CacheManager;
@@ -42,6 +44,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -370,12 +373,13 @@ public class StandardAuthManager implements AuthManager {
             HugeTarget target = this.metaManager.findTarget(graphSpace,
                                 IdGenerator.of(DEFAULT_SPACE_TARGET_KEY));
             if (target == null) {
-                ImmutableList<HugeResource> spaceReseources =
-                        ImmutableList.of(new HugeResource(ResourceType.ALL, null,
-                                                          null));
+                Map<String, List<HugeResource>> spaceResources =
+                        new HashMap<>();
+                spaceResources.put("ALL", ImmutableList.of(
+                        new HugeResource(ResourceType.ALL, null, null)));
                 target = new HugeTarget(DEFAULT_SPACE_TARGET_KEY,
                                         graphSpace, ALL_GRAPHS,
-                                        spaceReseources);
+                                        spaceResources);
                 this.updateCreator(target);
                 target.create(target.update());
                 this.metaManager.createTarget(graphSpace, target);
@@ -1188,6 +1192,7 @@ public class StandardAuthManager implements AuthManager {
     }
 
     private RolePermission rolePermission(HugeUser user) {
+        // todo 当前是取出所有权限再鉴权；要改为根据 requiredPerm 查询取出权限
         if (user.role() != null) {
             // Return cached role (40ms => 10ms)
             return user.role();
@@ -1214,8 +1219,25 @@ public class StandardAuthManager implements AuthManager {
         }
 
         user.role(role);
+        // todo input requiredPerm
         return role;
     }
+
+//    private RolePermission rolePermission(HugeUser user,
+//                                          RequiredPerm requiredPerm) {
+//        // todo
+//        if (user.role() != null) {
+//            // Return cached role (40ms => 10ms)
+//            return user.role();
+//        }
+//
+//        // Collect accesses by user
+//        RolePermission role = new RolePermission();
+//
+//        String graphSpace = requiredPerm.graphSpace();
+//        String owner = requiredPerm.owner();
+//        HugePermission permission = requiredPerm.action();
+//    }
 
     private RolePermission rolePermission(List<HugeAccess> accesses) {
         // Mapping of: graph -> action -> resource

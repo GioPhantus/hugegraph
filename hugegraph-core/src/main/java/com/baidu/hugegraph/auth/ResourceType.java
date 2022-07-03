@@ -99,7 +99,11 @@ public enum ResourceType {
 
     public boolean isSchema() {
         int ord = this.ordinal();
-        return PROPERTY_KEY.ordinal() <= ord && ord <= SCHEMA.ordinal();
+        return PROPERTY_KEY.ordinal() <= ord && ord <= META.ordinal();
+    }
+
+    public boolean isGraphOrSchema() {
+        return this.isSchema() || this.isGraph();
     }
 
     public boolean isAuth() {

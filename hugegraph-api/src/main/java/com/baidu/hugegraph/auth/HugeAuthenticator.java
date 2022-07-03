@@ -19,6 +19,7 @@
 
 package com.baidu.hugegraph.auth;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ import com.baidu.hugegraph.config.HugeConfig;
 import com.baidu.hugegraph.config.OptionSpace;
 import com.baidu.hugegraph.config.ServerOptions;
 import com.baidu.hugegraph.server.RestServer;
+import com.baidu.hugegraph.structure.HugeElement;
 import com.baidu.hugegraph.type.Namifiable;
 import com.baidu.hugegraph.util.E;
 import com.baidu.hugegraph.util.JsonUtil;
@@ -266,6 +268,9 @@ public interface HugeAuthenticator extends Authenticator {
         @JsonProperty("roles") // graphspace -> graph -> action -> resource
         private Map<String, Map<String, Map<HugePermission, Object>>> roles;
 
+        public static final String ANY = "*";
+        public static final String POUND_SEPARATOR = "#";
+
         public RolePerm() {
             this.roles = new HashMap<>();
         }
@@ -327,20 +332,19 @@ public interface HugeAuthenticator extends Authenticator {
                 return true;
             }
 
-            String graphSpace = requiredResource.graphSpace();
-            String owner = requiredResource.graph();
             Map<String, Map<HugePermission, Object>> innerRoles =
-                                                     this.roles.get(graphSpace);
+                    this.roles.get(requiredResource.graphSpace());
             if (innerRoles == null) {
                 return false;
             }
 
+            // * or {graph}
+            String owner = requiredResource.graph();
             for (Map.Entry<String, Map<HugePermission, Object>> e :
                     innerRoles.entrySet()) {
                 if (!matchedPrefix(e.getKey(), owner)) {
                     continue;
                 }
-
                 Map<HugePermission, Object> permissions = e.getValue();
                 if (permissions == null) {
                     permissions = innerRoles.get(GENERAL_PATTERN);
@@ -348,22 +352,55 @@ public interface HugeAuthenticator extends Authenticator {
                         return false;
                     }
                 }
+
                 Object permission = matchedAction(requiredAction, permissions);
                 if (permission == null) {
                     // Deny all if no specified permission
                     return false;
                 }
-                List<HugeResource> ress;
-                if (permission instanceof List) {
-                    @SuppressWarnings("unchecked")
-                    List<HugeResource> list = (List<HugeResource>) permission;
-                    ress = list;
-                } else {
-                    ress = HugeResource.parseResources(permission.toString());
-                }
-                for (HugeResource res : ress) {
-                    if (res.filter(requiredResource)) {
+
+                Map<String, List<HugeResource>> ressMap = (Map<String,
+                        List<HugeResource>>) permission;
+
+                // todo get real requiredLabel
+                ResourceType requiredType = requiredResource.type();
+                for (Map.Entry<String, List<HugeResource>> entry :
+                        ressMap.entrySet()) {
+                    String[] typeLabel = entry.getKey().split(POUND_SEPARATOR);
+                    ResourceType type = ResourceType.valueOf(typeLabel[0]);
+                    if (!type.match(requiredType)) {
+                        continue;
+                    } else if (type != requiredType) {
                         return true;
+                    }
+
+                    // check label
+                    String requiredLabel = null;
+                    if (requiredType.isSchema()) {
+                        requiredLabel =
+                                ((Namifiable) requiredResource.operated()).name();
+                    } else if (requiredType.isGraph()) {
+                        requiredLabel =
+                                ((HugeElement) requiredResource.operated()).label();
+                    } else {
+                        return true;
+                    }
+                    String label = typeLabel[1];
+                    if (!(label == ANY || requiredLabel.matches(label))) {
+                        continue;
+                    } else if (requiredType.isSchema()) {
+                        return true;
+                    }
+
+                    // check properties
+                    List<HugeResource> ress =
+                            ressMap.get(type + POUND_SEPARATOR + label);
+
+                    for (HugeResource res : ress) {
+                        if (res.filter(
+                                ((HugeElement) requiredResource.operated()))) {
+                            return true;
+                        }
                     }
                 }
             }
