@@ -86,6 +86,7 @@ import com.baidu.hugegraph.structure.HugeElement;
 import com.baidu.hugegraph.structure.HugeProperty;
 import com.baidu.hugegraph.testutil.Whitebox;
 import com.baidu.hugegraph.type.HugeType;
+import com.baidu.hugegraph.type.define.DataType;
 import com.baidu.hugegraph.type.define.Directions;
 import com.baidu.hugegraph.type.define.HugeKeys;
 import com.baidu.hugegraph.util.CollectionUtil;
@@ -793,6 +794,21 @@ public final class TraversalUtil {
             predicate = ConditionP.eq(expected);
         }
         updatePredicateValue(predicate, ((HugeProperty<?>) prop).propertyKey());
+        return predicate.test(actual);
+    }
+
+    public static boolean testPropertyStr(Property<?> prop, Object expected) {
+        String actual = prop.value().toString();
+        P<Object> predicate;
+        PropertyKey pKey = ((HugeProperty<?>) prop).propertyKey();
+        pKey.dataType(DataType.TEXT);
+        if (expected instanceof String &&
+            ((String) expected).startsWith(TraversalUtil.P_CALL)) {
+            predicate = TraversalUtil.parsePredicate(((String) expected));
+        } else {
+            predicate = ConditionP.eq(expected);
+        }
+        updatePredicateValue(predicate, pKey);
         return predicate.test(actual);
     }
 
